@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#include <stdbool.h>
 
 #define ASCII_GROUP_1_START 0x21
 #define ASCII_GROUP_1_END   0x2f
@@ -73,60 +74,45 @@ int numberOfDigits (int n) {
 }
 
 char* buildAPIRequest(requestStruct requestParameters) {
-    // absolute spaghetti will optimise later
-    char* sanitisedArtist = NULL;
-    char* sanitisedTrack = NULL;
-    char* sanitisedAlbum = NULL;
+    char* sanitisedStrings[4];
+
     char* outputURL = NULL;
-    char* durationString = NULL;
+
+    char* requestParameterStringsInArray[3] = {
+        requestParameters.artist_name,
+        requestParameters.track_name,
+        requestParameters.album_name
+    };
+    char* requestParameterFieldsArray[3] = {"artist_name=", "track_name=", "album_name="};
 
     int requestLength = strlen(ROOT_URL);
 
-    if (requestParameters.artist_name != NULL) {
-        sanitisedArtist = sanitiseStringForURL(requestParameters.artist_name, strlen(requestParameters.artist_name), "artist_name=");
-        requestLength += strlen(sanitisedArtist);
-    }
-
-    if (requestParameters.track_name != NULL) {
-        sanitisedTrack = sanitiseStringForURL(requestParameters.track_name, strlen(requestParameters.track_name), "track_name=");
-        requestLength += strlen(sanitisedTrack);
-    }
-
-    if (requestParameters.album_name != NULL) {
-        sanitisedAlbum = sanitiseStringForURL(requestParameters.album_name, strlen(requestParameters.album_name), "album_name=");
-        requestLength += strlen(sanitisedAlbum);
+    for (int i = 0; i < 3; i++) {
+        if (requestParameterStringsInArray[i] != NULL) {
+            sanitisedStrings[i] = sanitiseStringForURL(requestParameterStringsInArray[i],
+                                                       strlen(requestParameterStringsInArray[i]),
+                                                       requestParameterFieldsArray[i]);
+            requestLength += strlen(sanitisedStrings[i]);
+        }
     }
     
     if (requestParameters.duration != 0) {
         // 1 for the ampersand and 1 for the NULL terminator
         int durationStringSize = strlen(DURATION_PARAMETER) + 1 + numberOfDigits(requestParameters.duration) + 1;
-        durationString = calloc(durationStringSize, sizeof(char));
-        snprintf(durationString, durationStringSize, "&%s%d", DURATION_PARAMETER, requestParameters.duration);
-        requestLength += strlen(durationString);
+        sanitisedStrings[3] = calloc(durationStringSize, sizeof(char));
+        snprintf(sanitisedStrings[3], durationStringSize, "&%s%d", DURATION_PARAMETER, requestParameters.duration);
+        requestLength += strlen(sanitisedStrings[3]);
     }
 
     outputURL = calloc(requestLength, sizeof(char));
 
     strncat(outputURL, ROOT_URL, strlen(ROOT_URL) + 1);
 
-    if (sanitisedArtist != NULL) {
-        strncat(outputURL, sanitisedArtist, strlen(sanitisedArtist));
-        free(sanitisedArtist);
-    }
-
-    if (sanitisedAlbum != NULL) {
-        strncat(outputURL, sanitisedAlbum, strlen(sanitisedAlbum));
-        free(sanitisedAlbum);
-    }
-
-    if (sanitisedTrack != NULL) {
-        strncat(outputURL, sanitisedTrack, strlen(sanitisedTrack));
-        free(sanitisedTrack);
-    }
-
-    if (durationString != NULL) {
-        strncat(outputURL, durationString, strlen(durationString));
-        free(durationString);
+    for (int i = 0; i < 4; i++) {
+        if (sanitisedStrings[i] != NULL) {
+            strncat(outputURL, sanitisedStrings[i], strlen(sanitisedStrings[i]));
+            free(sanitisedStrings[i]);
+        }
     }
 
     return outputURL;
@@ -167,6 +153,56 @@ char* curlRequest(char* inputURL) {
     return outBuffer;
 }
 
+char* jsonParser(char* jsonString, char* requestedField) {
+    // this function only needs to find strings to pull the syncedLyrics field from the API response,
+    // so it will not get the content of a field if it is an integer or boolean, such as the duration and instrumental fields
+
+    char* fieldContent = NULL;
+    int index = 0;
+
+    char* currentSearchPosition = jsonString;
+    while (currentSearchPosition < (jsonString + strlen(jsonString) ) ) {
+        currentSearchPosition = strstr(currentSearchPosition, requestedField);
+        if (currentSearchPosition == NULL) break;
+
+        index = currentSearchPosition - jsonString;
+        // printf("Potential match found at index: %d\n", index);
+
+        char* maybeSecondDoubleQuote = currentSearchPosition + strlen(requestedField);
+
+        if ( *(currentSearchPosition - 1) == '"' &&
+             *maybeSecondDoubleQuote == '"'
+        ) {
+            // printf("found: %s\n", requestedField);
+
+            char* firstContentDoubleQuote = strchr(maybeSecondDoubleQuote + 1, '"');
+            if (firstContentDoubleQuote == NULL) {
+                return NULL;
+            }
+
+            char* secondContentDoubleQuote = strchr(firstContentDoubleQuote + 1, '"');
+            if (secondContentDoubleQuote == NULL) {
+                return NULL;
+            } else if (*(secondContentDoubleQuote - 1) == '\\') {
+                for (int i = 0; i < strlen(jsonString); i++) {
+                    secondContentDoubleQuote = strchr(secondContentDoubleQuote + 1, '"');
+                    if (*(secondContentDoubleQuote - 1) != '\\') break;
+                    if (secondContentDoubleQuote == NULL) return NULL;
+                }
+            }
+
+
+            int contentSize = secondContentDoubleQuote - firstContentDoubleQuote - 1;
+            fieldContent = malloc(contentSize * sizeof(char));
+
+            strncpy(fieldContent, firstContentDoubleQuote + 1, contentSize);
+            return fieldContent;
+        }
+
+        currentSearchPosition++;
+    }
+}
+
 int main(int argc, char **argv) {
     char* response;
     char* request = buildAPIRequest((requestStruct){"Linkin Park", "Somewhere I Belong", "Meteora", 213});
@@ -174,7 +210,8 @@ int main(int argc, char **argv) {
     response = curlRequest(request);
     free(request);
 
-    printf("%s\n", response);
+    char* syncedLyrics = jsonParser(response, "syncedLyrics");
+    printf("%s\n", syncedLyrics);
 
     free(response);
 
