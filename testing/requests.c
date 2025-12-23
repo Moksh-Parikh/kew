@@ -25,16 +25,13 @@ typedef struct {
     int duration;
 } requestStruct;
 
-typedef struct {
-    char  *data;
-    size_t size;   /* number of bytes currently stored */
-} curl_buffer;
-
 char* sanitiseStringForURL(char* inString, int inStringLength, char* parameterPrefix) {
     char* tempString = calloc(3 * inStringLength, sizeof(char));
+    if (tempString == NULL) return NULL;
+    
     int tempStringSize;
     char* output;
-    char* escapedCharacterBuffer = calloc(4, sizeof(char));
+    char escapedCharacterBuffer[4];
 
     strncat(tempString, "&", 2);
     strncat(tempString, parameterPrefix, strlen(parameterPrefix) + 1);
@@ -61,6 +58,7 @@ char* sanitiseStringForURL(char* inString, int inStringLength, char* parameterPr
 
     tempStringSize = strlen(tempString) + 1;
     output = calloc(tempStringSize, sizeof(char));
+    if (output == NULL) return NULL;
 
     strncpy(output, tempString, tempStringSize);
     free(tempString);
@@ -100,23 +98,28 @@ char* buildAPIRequest(requestStruct requestParameters) {
                                                        requestParameterFieldsArray[i]);
             requestLength += strlen(sanitisedStrings[i]);
         }
+        else sanitisedStrings[i] = NULL;
     }
     
     if (requestParameters.duration != 0) {
         // 1 for the ampersand and 1 for the NULL terminator
         int durationStringSize = strlen(DURATION_PARAMETER) + 1 + numberOfDigits(requestParameters.duration) + 1;
+        
         sanitisedStrings[3] = calloc(durationStringSize, sizeof(char));
+        if (sanitisedStrings[3] == NULL) return NULL;
+        
         snprintf(sanitisedStrings[3], durationStringSize, "&%s%d", DURATION_PARAMETER, requestParameters.duration);
         requestLength += strlen(sanitisedStrings[3]);
     }
 
-    outputURL = calloc(requestLength, sizeof(char));
+    outputURL = calloc(requestLength + 1, sizeof(char));
+    if (outputURL == NULL) return NULL;
 
     strncat(outputURL, ROOT_URL, strlen(ROOT_URL) + 1);
 
     for (int i = 0; i < 4; i++) {
         if (sanitisedStrings[i] != NULL) {
-            strncat(outputURL, sanitisedStrings[i], strlen(sanitisedStrings[i]));
+            strncat(outputURL, sanitisedStrings[i], strlen(sanitisedStrings[i]) + 1);
             free(sanitisedStrings[i]);
         }
     }
@@ -124,29 +127,24 @@ char* buildAPIRequest(requestStruct requestParameters) {
     return outputURL;
 }
 
-// Filthy ChatGPT code
-size_t write_to_string(void *contents, size_t size, size_t nmemb, void *userp)
-{
+// Inspired by filthy ChatGPT code
+size_t write_to_string(void *contents, size_t size, size_t nmemb, void *userp) {
     size_t real_size = size * nmemb;
-    curl_buffer *buffer = (curl_buffer *)userp;
-    char *ptr;
+    char **buffer = (char **)userp;
+    char *tempPointer;
 
-    /* Validate inputs */
-    if (!contents || !buffer || real_size == 0) {
+    if (contents == NULL || real_size == 0) {
         return 0;
     }
 
-    /* Grow buffer (+1 for null terminator) */
-    ptr = realloc(buffer->data, buffer->size + real_size + 1);
-    if (ptr == NULL) {
-        /* Out of memory: tell libcurl to abort */
+    tempPointer = calloc(real_size + 1, sizeof(char));
+    if (tempPointer == NULL) {
         return 0;
     }
 
-    buffer->data = ptr;
-    memcpy(buffer->data + buffer->size, contents, real_size);
-    buffer->size += real_size;
-    buffer->data[buffer->size] = '\0';
+    strncpy(tempPointer, (char *)contents, real_size);
+    tempPointer[real_size] = '\0';
+    *buffer = tempPointer;
 
     return real_size;
 }
@@ -158,28 +156,16 @@ char* curlRequest(char* inputURL) {
     if(result)
         return NULL;
 
-    curl_buffer respStr;
-    respStr.data = malloc(1);
-    respStr.size = 0;
+    char* respStr = NULL;
 
     curl = curl_easy_init();
     
     char* outBuffer = NULL;
 
-    int outputBufferSize = 8192;
-
-    char outputBuffer[outputBufferSize];
-
-    int commandSize = strlen(inputURL) + 1; // 1 for the NULL
-
-    char* curlCommand = calloc(commandSize, sizeof(char));
-    snprintf(curlCommand, commandSize, "%s", inputURL);
-
     if(curl) {
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_to_string);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &respStr);
-        curl_easy_setopt(curl, CURLOPT_URL, curlCommand);
-        free(curlCommand);
+        curl_easy_setopt(curl, CURLOPT_URL, inputURL);
 
         result = curl_easy_perform(curl);
         if(result != CURLE_OK)
@@ -191,16 +177,13 @@ char* curlRequest(char* inputURL) {
     
     curl_global_cleanup();
 
-    outBuffer = calloc(respStr.size + 1, sizeof(char));
-    strncpy(outBuffer, respStr.data, respStr.size);
-    free(respStr.data);
-
-    return outBuffer;
+    return respStr;
 }
 
+// this function only needs to find strings to pull the syncedLyrics field from the API response,
+// so it will not get the content of a field if it is an integer or boolean, such as the duration and instrumental fields
 char* jsonParser(char* jsonString, char* requestedField) {
-    // this function only needs to find strings to pull the syncedLyrics field from the API response,
-    // so it will not get the content of a field if it is an integer or boolean, such as the duration and instrumental fields
+    if (jsonString == NULL || requestedField == NULL) return NULL;
 
     char* fieldContent = NULL;
     int index = 0;
@@ -211,15 +194,12 @@ char* jsonParser(char* jsonString, char* requestedField) {
         if (currentSearchPosition == NULL) break;
 
         index = currentSearchPosition - jsonString;
-        // printf("Potential match found at index: %d\n", index);
 
         char* maybeSecondDoubleQuote = currentSearchPosition + strlen(requestedField);
 
         if ( *(currentSearchPosition - 1) == '"' &&
              *maybeSecondDoubleQuote == '"'
         ) {
-            // printf("found: %s\n", requestedField);
-
             char* firstContentDoubleQuote = strchr(maybeSecondDoubleQuote + 1, '"');
             if (firstContentDoubleQuote == NULL) {
                 return NULL;
@@ -238,7 +218,7 @@ char* jsonParser(char* jsonString, char* requestedField) {
 
 
             int contentSize = secondContentDoubleQuote - firstContentDoubleQuote - 1;
-            fieldContent = malloc(contentSize * sizeof(char));
+            fieldContent = calloc((contentSize + 1), sizeof(char));
 
             strncpy(fieldContent, firstContentDoubleQuote + 1, contentSize);
             return fieldContent;
@@ -256,9 +236,12 @@ int main(int argc, char **argv) {
     free(request);
 
     char* syncedLyrics = jsonParser(response, "syncedLyrics");
-    printf("%s\n", syncedLyrics);
+    if (syncedLyrics != NULL) {
+        printf("%s\n", syncedLyrics);
+    }
 
     free(response);
+    free(syncedLyrics);
 
     return 0;
 }
