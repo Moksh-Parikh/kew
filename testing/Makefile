@@ -9,7 +9,7 @@ DEPS=$(wildcard *.h)
 	$(CC) $(CFLAGS) -c -o $@ $<;
 
 build/$(TARGET): $(OBJECTS)
-	$(CC) $^ -o $@;
+	$(CC) $^ -o $@ -lcurl;
 
 .PHONY: all clean
 

@@ -3,6 +3,7 @@
 #include <string.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <curl/curl.h>
 
 #define ASCII_GROUP_1_START 0x21
 #define ASCII_GROUP_1_END   0x2f
@@ -23,6 +24,11 @@ typedef struct {
     char* album_name;
     int duration;
 } requestStruct;
+
+typedef struct {
+    char  *data;
+    size_t size;   /* number of bytes currently stored */
+} curl_buffer;
 
 char* sanitiseStringForURL(char* inString, int inStringLength, char* parameterPrefix) {
     char* tempString = calloc(3 * inStringLength, sizeof(char));
@@ -118,37 +124,76 @@ char* buildAPIRequest(requestStruct requestParameters) {
     return outputURL;
 }
 
-char* curlRequest(char* inputURL) {
-    FILE* curlOutput;
-    char* outBuffer = NULL;
+// Filthy ChatGPT code
+size_t write_to_string(void *contents, size_t size, size_t nmemb, void *userp)
+{
+    size_t real_size = size * nmemb;
+    curl_buffer *buffer = (curl_buffer *)userp;
+    char *ptr;
 
-    int tempBufferSize = 1024;
-    int outputBufferSize = 8192;
-
-    char tempBuffer[tempBufferSize];
-    char outputBuffer[outputBufferSize];
-
-    int commandSize = strlen(CURL_BEGINNING) + strlen(inputURL) + 2 + 1 + 1; // 2 for the single quotes around URL and 1 for the space and 1 for the NULL
-
-    char* curlCommand = calloc(commandSize, sizeof(char));
-    snprintf(curlCommand, commandSize, "%s '%s'", CURL_BEGINNING, inputURL);
-
-    curlOutput = popen(curlCommand, "r");
-    free(curlCommand);
-
-    while (fgets(tempBuffer, sizeof(tempBuffer), curlOutput) != NULL) {
-        if (strlen(outputBuffer) + strlen(tempBuffer) >= outputBufferSize) {
-            fprintf(stderr, "Output buffer overflow\n");
-            pclose(curlOutput);
-            return NULL;
-        }
-        strcat(outputBuffer, tempBuffer);
+    /* Validate inputs */
+    if (!contents || !buffer || real_size == 0) {
+        return 0;
     }
 
-    pclose(curlOutput);
+    /* Grow buffer (+1 for null terminator) */
+    ptr = realloc(buffer->data, buffer->size + real_size + 1);
+    if (ptr == NULL) {
+        /* Out of memory: tell libcurl to abort */
+        return 0;
+    }
 
-    outBuffer = calloc(strlen(outputBuffer) + 1, sizeof(char));
-    strncpy(outBuffer, outputBuffer, strlen(outputBuffer));
+    buffer->data = ptr;
+    memcpy(buffer->data + buffer->size, contents, real_size);
+    buffer->size += real_size;
+    buffer->data[buffer->size] = '\0';
+
+    return real_size;
+}
+
+char* curlRequest(char* inputURL) {
+    CURL *curl;
+ 
+    CURLcode result = curl_global_init(CURL_GLOBAL_ALL);
+    if(result)
+        return NULL;
+
+    curl_buffer respStr;
+    respStr.data = malloc(1);
+    respStr.size = 0;
+
+    curl = curl_easy_init();
+    
+    char* outBuffer = NULL;
+
+    int outputBufferSize = 8192;
+
+    char outputBuffer[outputBufferSize];
+
+    int commandSize = strlen(inputURL) + 1; // 1 for the NULL
+
+    char* curlCommand = calloc(commandSize, sizeof(char));
+    snprintf(curlCommand, commandSize, "%s", inputURL);
+
+    if(curl) {
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_to_string);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &respStr);
+        curl_easy_setopt(curl, CURLOPT_URL, curlCommand);
+        free(curlCommand);
+
+        result = curl_easy_perform(curl);
+        if(result != CURLE_OK)
+          fprintf(stderr, "curl_easy_perform() failed: %s\n",
+                  curl_easy_strerror(result));
+
+        curl_easy_cleanup(curl);
+    }
+    
+    curl_global_cleanup();
+
+    outBuffer = calloc(respStr.size + 1, sizeof(char));
+    strncpy(outBuffer, respStr.data, respStr.size);
+    free(respStr.data);
 
     return outBuffer;
 }
