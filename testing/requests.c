@@ -3,6 +3,8 @@
 #include <string.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <unistd.h>
+
 #include <curl/curl.h>
 
 #define ASCII_GROUP_1_START 0x21
@@ -15,8 +17,6 @@
 
 #define ROOT_URL            "https://lrclib.net/api/get?"
 #define DURATION_PARAMETER  "duration="
-
-#define CURL_BEGINNING      "curl -s"
 
 typedef struct {
     char* artist_name;
@@ -228,6 +228,21 @@ char* jsonParser(char* jsonString, char* requestedField) {
     }
 }
 
+bool LRCExists(char* originalFilePath) {
+    char lrcPath[1024];
+    if (snprintf(lrcPath, sizeof(lrcPath), "%s", originalFilePath) >= (int)sizeof(lrcPath))
+        return NULL;
+
+    char *dot = strrchr(lrcPath, '.');
+    if (!dot || dot == lrcPath)
+        return NULL;
+
+    if (snprintf(dot, sizeof(lrcPath) - (dot - lrcPath), ".lrc") >= (int)(sizeof(lrcPath) - (dot - lrcPath)))
+        return NULL;
+
+    return access(lrcPath, F_OK);
+}
+
 int main(int argc, char **argv) {
     char* response;
     char* request = buildAPIRequest((requestStruct){"Linkin Park", "Somewhere I Belong", "Meteora", 213});
@@ -242,6 +257,8 @@ int main(int argc, char **argv) {
 
     free(response);
     free(syncedLyrics);
+
+    printf("%d\n", LRCExists("john.lrc"));
 
     return 0;
 }
