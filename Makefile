@@ -115,7 +115,7 @@ CFLAGS = $(COMMONFLAGS)
 CXXFLAGS = $(COMMONFLAGS) -std=c++11
 
 # Libraries
-LIBS = -lm -lopusfile -lglib-2.0 -lpthread $(PKG_LDFLAGS)
+LIBS = -lm -lopusfile -lglib-2.0 -lpthread -lcurl $(PKG_LDFLAGS)
 LIBS += -lstdc++
 
 LDFLAGS = -logg -lz
@@ -179,7 +179,7 @@ SRCS = src/common/appstate.c src/ui/common_ui.c src/common/common.c \
        src/ui/control_ui.c  src/ui/input.c src/ui/playlist_ui.c  src/ui/search_ui.c  src/ui/player_ui.c \
        src/ui/visuals.c src/ui/chroma.c src/ui/queue_ui.c src/ui/settings.c  src/ui/cli.c \
        src/data/theme.c src/data/directorytree.c src/data/lyrics.c src/data/img_func.c src/data/song_loader.c  \
-       src/data/playlist.c  src/kew.c
+       src/data/playlist.c src/data/network.c src/data/stringFunctions.c  src/kew.c
 
 # TagLib wrapper
 WRAPPER_SRC = src/data/tagLibWrapper.cpp

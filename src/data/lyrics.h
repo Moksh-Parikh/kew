@@ -11,6 +11,7 @@
 #ifndef LYRICS_H
 #define LYRICS_H
 
+#include <stdio.h>
 #include <stdbool.h>
 #include <stddef.h>
 
@@ -31,6 +32,7 @@ typedef struct {
 } Lyrics;
 
 Lyrics *loadLyricsFromLRC(const char *path);
+int loadTimedLyrics(FILE *file, Lyrics *lyrics);
 void freeLyrics(Lyrics *lyrics);
 
 #ifdef __cplusplus

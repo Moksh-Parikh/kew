@@ -8,6 +8,8 @@
  */
 
 #include "lyrics.h"
+#include "stringFunctions.h"
+#include "network.h"
 
 #include <cctype>
 #include <cstdlib>
@@ -31,7 +33,7 @@
 #include <taglib/xiphcomment.h>
 
 // LRC Loader
-static int loadTimedLyrics(FILE *file, Lyrics *lyrics)
+int loadTimedLyrics(FILE *file, Lyrics *lyrics)
 {
         size_t capacity = 64;
         lyrics->lines = (LyricsLine *)malloc(sizeof(LyricsLine) * capacity);

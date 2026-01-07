@@ -10,4 +10,6 @@
 #include <stdbool.h>
 
 SongData *load_song_data(char *file_path);
+Lyrics* getSyncedLyricsFromLIBLRC(SongData* songMetadata);
 void unload_song_data(SongData **songdata);
+// bool LRCExists(char* originalFilePath);

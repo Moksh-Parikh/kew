@@ -9,6 +9,7 @@
 
 #include "img_func.h"
 #include "lyrics.h"
+#include "network.h"
 
 #include "utils/cache.h"
 #include "utils/file.h"
@@ -334,6 +335,49 @@ void unload_lyrics(SongData *songdata)
         }
 }
 
+bool LRCExists(char* originalFilePath) {
+    char lrcPath[1024];
+    if (snprintf(lrcPath, sizeof(lrcPath), "%s", originalFilePath) >= (int)sizeof(lrcPath))
+        return NULL;
+
+    char *dot = strrchr(lrcPath, '.');
+    if (!dot || dot == lrcPath)
+        return NULL;
+
+    if (snprintf(dot, sizeof(lrcPath) - (dot - lrcPath), ".lrc") >= (int)(sizeof(lrcPath) - (dot - lrcPath)))
+        return NULL;
+
+    return !access(lrcPath, F_OK);
+}
+
+Lyrics* getSyncedLyricsFromLIBLRC(SongData* songMetadata) {
+    char* response;
+    char* request = buildAPIRequest(*songMetadata);
+    if (request == NULL) return NULL;
+
+    response = curlRequest(request);
+    if (response == NULL) return NULL;
+    free(request);
+
+    char* syncedLyrics = jsonParser(response, "syncedLyrics");
+    free(response);
+
+    // in LIBLRC's response there are no actual newlines, but
+    // a '\' followed by an 'n' instead
+    char* fixedLyrics = str_replace(syncedLyrics, "\\n", "\n");
+    free(syncedLyrics);
+
+    FILE* lyricsAsFile = fmemopen(fixedLyrics, strlen(fixedLyrics), "r");
+
+    songMetadata->lyrics = (Lyrics *)calloc(1, sizeof(Lyrics));
+    loadTimedLyrics(lyricsAsFile, songMetadata->lyrics);
+    fclose(lyricsAsFile);
+    free(fixedLyrics);
+
+    return songMetadata->lyrics;
+}
+
+
 SongData *load_song_data(char *file_path)
 {
         AppState *state = get_app_state();
@@ -353,8 +397,9 @@ SongData *load_song_data(char *file_path)
         songdata->avg_bit_rate = 0;
         songdata->lyrics = NULL;
         c_strcpy(songdata->file_path, file_path, sizeof(songdata->file_path));
-        songdata->lyrics = loadLyricsFromLRC(songdata->file_path);
         load_meta_data(songdata);
+        songdata->lyrics = LRCExists(file_path) ? loadLyricsFromLRC(songdata->file_path) : getSyncedLyricsFromLIBLRC(songdata);
+
         int res = load_color(songdata);
 
         if (songdata->cover && res != 0) {
